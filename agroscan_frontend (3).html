@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgriScan — Drone Disease Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0a0f0d;--bg2:#101a14;--surface:#1a2a1e;
+  --border:rgba(74,200,110,0.15);--border2:rgba(74,200,110,0.35);
+  --accent:#4ac86e;--accent-dim:#2d7a44;--accent-glow:rgba(74,200,110,0.08);
+  --text:#e8f5ec;--text2:#8aab92;--text3:#4d6654;
+  --red:#e25050;--amber:#e2a030;
+  --font-head:'Syne',sans-serif;--font-mono:'Space Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(74,200,110,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(74,200,110,0.03) 1px,transparent 1px);
+  background-size:40px 40px;}
+.app{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:1.5rem 1.5rem 4rem;}
+
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border);}
+.logo{display:flex;align-items:center;gap:12px;}
+.logo-icon{width:36px;height:36px;border:1.5px solid var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;}
+.logo-text{font-family:var(--font-head);font-size:20px;font-weight:800;letter-spacing:-0.5px;}
+.logo-text span{color:var(--accent);}
+.status-pill{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 2s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+.config-bar{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.config-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);white-space:nowrap;}
+.config-input{flex:1;min-width:220px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:6px 10px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;transition:border-color 0.2s;}
+.config-input:focus{border-color:var(--accent);}
+.config-input::placeholder{color:var(--text3);}
+.config-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);padding:6px 14px;border-radius:6px;font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+.config-btn:hover{border-color:var(--accent);color:var(--accent);}
+.conn-status{font-size:11px;padding:4px 10px;border-radius:100px;white-space:nowrap;}
+.conn-status.ok{background:rgba(74,200,110,0.1);color:var(--accent);border:1px solid var(--accent-dim);}
+.conn-status.err{background:rgba(226,80,80,0.1);color:var(--red);border:1px solid rgba(226,80,80,0.4);}
+.conn-status.idle{background:var(--surface);color:var(--text3);border:1px solid var(--border);}
+
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1.5rem;}
+.stat{background:var(--bg2);padding:0.85rem 1rem;text-align:center;}
+.stat-val{font-family:var(--font-head);font-size:22px;font-weight:800;color:var(--accent);line-height:1;margin-bottom:3px;}
+.stat-lbl{font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;}
+
+.tabs{display:flex;gap:4px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:1.5rem;}
+.tab{flex:1;padding:8px 12px;border:none;background:transparent;color:var(--text3);font-family:var(--font-mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:7px;transition:all 0.2s;text-align:center;}
+.tab.active{background:var(--surface);color:var(--accent);border:1px solid var(--border2);}
+.tab:hover:not(.active){color:var(--text2);}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+.section-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:0.65rem;display:flex;align-items:center;gap:8px;}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+.sub-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin:0.85rem 0 5px;}
+
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.panel-header{padding:0.65rem 1rem;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);display:flex;align-items:center;gap:8px;}
+.panel-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+.panel-body{padding:1rem;}
+
+.scan-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;}
+@media(max-width:700px){.scan-grid{grid-template-columns:1fr;}}
+
+.drop-zone{border:1.5px dashed var(--border2);border-radius:12px;padding:2.5rem 2rem;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--accent-glow);position:relative;}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:rgba(74,200,110,0.12);}
+.drop-zone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.drop-icon{width:48px;height:48px;border:1.5px solid var(--border2);border-radius:10px;margin:0 auto 0.85rem;display:flex;align-items:center;justify-content:center;background:var(--surface);}
+.drop-title{font-family:var(--font-head);font-size:17px;font-weight:600;margin-bottom:0.3rem;}
+.drop-sub{font-size:12px;color:var(--text3);}
+
+#preview-img{width:100%;height:200px;object-fit:cover;border-radius:8px;display:none;}
+.preview-placeholder{width:100%;height:200px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text3);}
+.meta-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.meta-row:last-child{border-bottom:none;}
+.meta-key{color:var(--text3);}
+.meta-val{color:var(--text);font-weight:700;}
+
+.analyze-btn{width:100%;padding:0.9rem;background:var(--accent);color:#0a0f0d;border:none;border-radius:10px;font-family:var(--font-head);font-size:15px;font-weight:700;cursor:pointer;letter-spacing:0.5px;transition:all 0.2s;display:none;align-items:center;justify-content:center;gap:10px;margin-bottom:1rem;}
+.analyze-btn.show{display:flex;}
+.analyze-btn:hover:not(:disabled){opacity:0.9;transform:translateY(-1px);}
+.analyze-btn:disabled{opacity:0.4;cursor:not-allowed;}
+
+.result-hidden{display:none;}
+.disease-name{font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:2px;}
+.disease-plant{font-size:12px;color:var(--text3);margin-bottom:0.75rem;}
+.severity-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:100px;font-size:11px;font-weight:700;letter-spacing:0.5px;margin-bottom:0.75rem;}
+.sev-low{background:rgba(74,200,110,0.15);color:var(--accent);border:1px solid var(--accent-dim);}
+.sev-med{background:rgba(226,160,48,0.15);color:var(--amber);border:1px solid rgba(226,160,48,0.4);}
+.sev-high{background:rgba(226,80,80,0.15);color:var(--red);border:1px solid rgba(226,80,80,0.4);}
+
+.conf-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:5px;}
+.conf-bar-bg{height:5px;background:var(--surface);border-radius:3px;overflow:hidden;margin-bottom:1rem;}
+.conf-bar-fill{height:100%;border-radius:3px;background:var(--accent);width:0%;transition:width 1s ease;}
+
+.pred-item{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);}
+.pred-item:last-child{border-bottom:none;}
+.pred-rank{font-size:10px;color:var(--text3);min-width:16px;}
+.pred-name{font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pred-pct{font-size:11px;color:var(--accent);font-weight:700;min-width:40px;text-align:right;}
+.pred-bar{width:50px;height:4px;background:var(--surface);border-radius:2px;overflow:hidden;}
+.pred-bar-fill{height:100%;background:var(--accent);border-radius:2px;}
+
+.rec-item{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;line-height:1.6;color:var(--text2);}
+.rec-item:last-child{border-bottom:none;}
+.rec-num{color:var(--accent);font-weight:700;min-width:16px;flex-shrink:0;}
+
+.loading-overlay{display:none;flex-direction:column;align-items:center;gap:0.85rem;padding:2rem;}
+.loading-overlay.show{display:flex;}
+.spinner{width:32px;height:32px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:12px;color:var(--text2);}
+
+.error-box{background:rgba(226,80,80,0.08);border:1px solid rgba(226,80,80,0.3);border-radius:8px;padding:0.75rem 1rem;font-size:12px;color:var(--red);margin-bottom:1rem;display:none;}
+.error-box.show{display:block;}
+
+.action-row{display:flex;gap:8px;margin-top:0.75rem;}
+.action-btn{flex:1;background:transparent;border:1px solid var(--border2);color:var(--text2);padding:8px 10px;border-radius:8px;font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;}
+.action-btn:hover{border-color:var(--accent);color:var(--accent);}
+.new-scan-btn{width:100%;background:transparent;border:1px solid var(--border2);color:var(--text2);padding:9px 20px;border-radius:8px;font-family:var(--font-mono);font-size:12px;cursor:pointer;transition:all 0.2s;display:none;margin-top:0.75rem;}
+.new-scan-btn.show{display:block;}
+.new-scan-btn:hover{border-color:var(--accent);color:var(--accent);}
+.chart-wrap{position:relative;height:190px;margin-top:0.5rem;}
+
+.batch-drop{border:1.5px dashed var(--border2);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;background:var(--accent-glow);position:relative;margin-bottom:1rem;transition:all 0.2s;}
+.batch-drop:hover,.batch-drop.drag-over{border-color:var(--accent);background:rgba(74,200,110,0.12);}
+.batch-drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.batch-queue{display:flex;flex-direction:column;gap:6px;margin-bottom:1rem;max-height:300px;overflow-y:auto;}
+.batch-item{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:12px;}
+.batch-info{flex:1;min-width:0;}
+.batch-name{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.batch-sz{font-size:10px;color:var(--text3);margin-top:2px;}
+.batch-badge{font-size:10px;padding:3px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0;}
+.batch-run-btn{width:100%;padding:0.85rem;background:var(--accent);color:#0a0f0d;border:none;border-radius:10px;font-family:var(--font-head);font-size:15px;font-weight:700;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.batch-run-btn:hover:not(:disabled){opacity:0.9;}
+.batch-run-btn:disabled{opacity:0.4;cursor:not-allowed;}
+.batch-export-btn{width:100%;margin-top:8px;background:transparent;border:1px solid var(--border2);color:var(--text2);padding:9px;border-radius:8px;font-family:var(--font-mono);font-size:12px;cursor:pointer;transition:all 0.2s;display:none;}
+.batch-export-btn.show{display:block;}
+.batch-export-btn:hover{border-color:var(--accent);color:var(--accent);}
+.prog-bar{height:4px;background:var(--surface);border-radius:2px;overflow:hidden;margin:8px 0;}
+.prog-fill{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width 0.3s;}
+
+.history-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem;display:flex;align-items:center;gap:14px;margin-bottom:8px;}
+.history-img{width:52px;height:52px;object-fit:cover;border-radius:7px;flex-shrink:0;background:var(--surface);}
+.history-info{flex:1;min-width:0;}
+.history-disease{font-family:var(--font-head);font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px;}
+.history-meta{font-size:11px;color:var(--text3);}
+.history-right{text-align:right;flex-shrink:0;}
+.history-conf{font-size:16px;font-weight:700;color:var(--accent);font-family:var(--font-head);}
+.clear-btn{background:transparent;border:1px solid rgba(226,80,80,0.3);color:var(--red);padding:7px 14px;border-radius:8px;font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all 0.2s;}
+.clear-btn:hover{border-color:var(--red);background:rgba(226,80,80,0.08);}
+
+.footer-note{text-align:center;font-size:11px;color:var(--text3);padding-top:1.75rem;border-top:1px solid var(--border);line-height:1.8;margin-top:2rem;}
+.footer-note strong{color:var(--text2);}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* Batch result cards */
+.batch-result-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.brc-header{display:flex;align-items:center;gap:14px;padding:1rem;border-bottom:1px solid var(--border);}
+.brc-thumb{width:72px;height:72px;object-fit:cover;border-radius:8px;flex-shrink:0;background:var(--surface);}
+.brc-thumb-ph{width:72px;height:72px;border-radius:8px;flex-shrink:0;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);}
+.brc-meta{flex:1;min-width:0;}
+.brc-idx{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:3px;}
+.brc-fname{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px;}
+.brc-disease{font-family:var(--font-head);font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px;}
+.brc-right{text-align:right;flex-shrink:0;}
+.brc-conf-big{font-family:var(--font-head);font-size:28px;font-weight:800;color:var(--accent);line-height:1;}
+.brc-conf-lbl{font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+.brc-body{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--border);}
+@media(max-width:650px){.brc-body{grid-template-columns:1fr;}}
+.brc-left{padding:1rem;border-right:1px solid var(--border);}
+.brc-right-panel{padding:1rem;}
+.brc-chart-wrap{position:relative;height:160px;margin-top:0.5rem;}
+.brc-rec{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;line-height:1.5;color:var(--text2);}
+.brc-rec:last-child{border-bottom:none;}
+.brc-rec-num{color:var(--accent);font-weight:700;min-width:16px;flex-shrink:0;}
+.brc-pending{padding:2rem;text-align:center;font-size:12px;color:var(--text3);}
+.brc-processing{display:flex;align-items:center;justify-content:center;gap:10px;padding:1.5rem;font-size:12px;color:var(--text2);}
+
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#4ac86e" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <span class="logo-text">Agri<span>Scan</span></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <div class="status-pill"><div class="dot"></div> SYSTEM ONLINE</div>
+    <div class="status-pill">MobileNetV2 · 44 Classes · 99.2% Acc</div>
+  </div>
+</header>
+
+<div class="config-bar">
+  <span class="config-label">Backend URL</span>
+  <input class="config-input" id="api-url" type="text" placeholder="Paste your cloudflared URL — https://xxxx.trycloudflare.com">
+  <button class="config-btn" onclick="testConn()">Test Connection</button>
+  <span class="conn-status idle" id="conn-status">Not connected</span>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="stat-val">44</div><div class="stat-lbl">Disease Classes</div></div>
+  <div class="stat"><div class="stat-val">99.2%</div><div class="stat-lbl">Val Accuracy</div></div>
+  <div class="stat"><div class="stat-val">&lt;500ms</div><div class="stat-lbl">Inference Time</div></div>
+  <div class="stat"><div class="stat-val" id="stat-total">0</div><div class="stat-lbl">Total Scans</div></div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('single',this)">Single Scan</button>
+  <button class="tab" onclick="switchTab('batch',this)">Batch Scan</button>
+  <button class="tab" onclick="switchTab('history',this)">History</button>
+</div>
+
+<!-- SINGLE SCAN -->
+<div class="tab-content active" id="tab-single">
+  <div class="scan-grid">
+    <div>
+      <div class="section-label">Input Image</div>
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" accept="image/*" id="file-input">
+        <div class="drop-icon">
+          <svg width="20" height="20" fill="none" stroke="#4ac86e" stroke-width="1.5" viewBox="0 0 24 24">
+            <path d="M4 16l4-4 4 4 4-6 4 6"/><rect x="2" y="3" width="20" height="18" rx="2"/>
+          </svg>
+        </div>
+        <div class="drop-title">Drop Crop Image</div>
+        <div class="drop-sub">JPG, PNG, TIFF · Up to 10MB</div>
+      </div>
+      <div style="margin-top:1rem;">
+        <div class="section-label">Image Info</div>
+        <div class="panel"><div class="panel-body" style="padding:0.75rem 1rem;">
+          <img id="preview-img" alt="">
+          <div class="preview-placeholder" id="preview-ph">No image loaded</div>
+          <div style="margin-top:0.75rem;">
+            <div class="meta-row"><span class="meta-key">Filename</span><span class="meta-val" id="m-name">—</span></div>
+            <div class="meta-row"><span class="meta-key">Size</span><span class="meta-val" id="m-size">—</span></div>
+            <div class="meta-row"><span class="meta-key">Dimensions</span><span class="meta-val" id="m-dim">—</span></div>
+            <div class="meta-row"><span class="meta-key">Status</span><span class="meta-val" id="m-status">Ready</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div>
+      <div class="section-label">Detection Results</div>
+      <div class="panel" style="min-height:300px;">
+        <div class="panel-header"><div class="panel-dot"></div> ANALYSIS OUTPUT</div>
+        <div class="panel-body">
+          <div class="error-box" id="err-box"></div>
+          <div class="loading-overlay" id="loading"><div class="spinner"></div><div class="loading-text" id="loading-text">Sending...</div></div>
+          <div id="result-content" class="result-hidden">
+            <div class="disease-name" id="r-disease">—</div>
+            <div class="disease-plant" id="r-plant">—</div>
+            <span class="severity-badge" id="r-sev"></span>
+            <div class="conf-label"><span>Confidence</span><span id="r-conf">—</span></div>
+            <div class="conf-bar-bg"><div class="conf-bar-fill" id="conf-fill"></div></div>
+            <div class="sub-label">Confidence Chart</div>
+            <div class="chart-wrap"><canvas id="conf-chart"></canvas></div>
+            <div class="sub-label" style="margin-top:1rem;">Field Recommendations</div>
+            <div id="rec-list"></div>
+            <div class="action-row">
+              <button class="action-btn" onclick="exportSinglePDF()">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Export PDF
+              </button>
+            </div>
+          </div>
+          <div id="result-empty" style="padding:2.5rem 0;text-align:center;font-size:12px;color:var(--text3);">Connect backend → upload image → run analysis</div>
+        </div>
+      </div>
+      <button class="analyze-btn" id="analyze-btn" onclick="runAnalysis()">
+        <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        Run Disease Analysis
+      </button>
+      <button class="new-scan-btn" id="new-scan-btn" onclick="resetScan()">+ New Scan</button>
+    </div>
+  </div>
+</div>
+
+<!-- BATCH SCAN -->
+<div class="tab-content" id="tab-batch">
+  <div class="section-label">Upload Multiple Images</div>
+  <div class="batch-drop" id="batch-drop">
+    <input type="file" accept="image/*" multiple id="batch-input">
+    <div class="drop-icon" style="margin:0 auto 0.75rem;">
+      <svg width="20" height="20" fill="none" stroke="#4ac86e" stroke-width="1.5" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    </div>
+    <div class="drop-title">Drop Multiple Images</div>
+    <div class="drop-sub">Select or drag multiple JPG/PNG files at once</div>
+  </div>
+
+  <!-- Queue + run button -->
+  <div id="batch-queue" class="batch-queue"></div>
+  <div class="prog-bar"><div class="prog-fill" id="batch-prog"></div></div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:8px;" id="batch-status"></div>
+  <div style="display:flex;gap:8px;margin-bottom:1.5rem;">
+    <button class="batch-run-btn" id="batch-run-btn" onclick="runBatch()" disabled style="flex:1;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      Analyse All Images
+    </button>
+    <button class="action-btn" id="batch-export-btn" onclick="exportBatchPDF()" style="flex:0 0 auto;display:none;padding:0 20px;">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Export PDF
+    </button>
+    <button class="action-btn" id="batch-clear-btn" onclick="clearBatch()" style="flex:0 0 auto;display:none;padding:0 20px;">
+      Clear
+    </button>
+  </div>
+
+  <!-- Results grid — one card per image -->
+  <div id="batch-results-grid" style="display:none;">
+    <div class="section-label">Results</div>
+    <div id="batch-cards" style="display:flex;flex-direction:column;gap:1.25rem;"></div>
+  </div>
+</div>
+
+<!-- HISTORY -->
+<div class="tab-content" id="tab-history">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <div class="section-label" style="margin-bottom:0;flex:1;">Scan History</div>
+    <button class="clear-btn" onclick="clearHistory()">Clear All</button>
+  </div>
+  <div id="history-list"></div>
+</div>
+
+<div class="footer-note">
+  <strong>AgriScan v2.0</strong> · MobileNetV2 · PlantVillage + Rice + Wheat · 44 classes · 99.2% val accuracy<br>
+  Preprocessing: resize 224×224 → /255 → ×2−1 · Raspberry Pi 4 / Jetson Nano ready
+</div>
+</div>
+
+<script>
+let curFile=null,curResult=null,done=false;
+let confChart=null;
+// Load history — if stored data is too large, wipe it to recover quota
+let history = (function() {
+  try {
+    const raw = localStorage.getItem('as_hist');
+    if (!raw) return [];
+    // If stored history is > 200KB, it likely contains full base64 images — clear it
+    if (raw.length > 200000) { localStorage.removeItem('as_hist'); return []; }
+    return JSON.parse(raw);
+  } catch(e) {
+    localStorage.removeItem('as_hist');
+    return [];
+  }
+})();
+let batchFiles=[],batchResults=[];
+let totalScans=parseInt(localStorage.getItem('as_total')||'0');
+document.getElementById('stat-total').textContent=totalScans;
+
+function getBase(){return(document.getElementById('api-url').value||'').trim().replace(/\/$/,'');}
+
+async function testConn(){
+  const b=getBase();if(!b){setCS('err','Enter URL first');return;}
+  setCS('idle','Testing...');
+  try{
+    const r=await fetch(b+'/health');
+    if(r.ok){const d=await r.json();setCS('ok','Connected · '+d.classes+' classes');}
+    else setCS('err','HTTP '+r.status);
+  }catch(e){setCS('err','Connection failed');}
+}
+function setCS(s,t){const e=document.getElementById('conn-status');e.className='conn-status '+s;e.textContent=t;}
+function showErr(m){const b=document.getElementById('err-box');b.textContent=m;b.classList.add('show');setTimeout(()=>b.classList.remove('show'),6000);}
+
+function switchTab(name,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='history')renderHistory();
+}
+
+const fi=document.getElementById('file-input');
+const dz=document.getElementById('drop-zone');
+fi.addEventListener('change',e=>{if(e.target.files[0])loadFile(e.target.files[0]);});
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
+
+function loadFile(f){
+  curFile=f;done=false;
+  document.getElementById('err-box').classList.remove('show');
+  const r=new FileReader();
+  r.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      const pi=document.getElementById('preview-img');
+      pi.src=ev.target.result;pi.style.display='block';
+      document.getElementById('preview-ph').style.display='none';
+      document.getElementById('m-name').textContent=f.name.length>22?f.name.slice(0,20)+'…':f.name;
+      document.getElementById('m-size').textContent=(f.size/1024).toFixed(1)+' KB';
+      document.getElementById('m-dim').textContent=img.width+' × '+img.height+' px';
+      document.getElementById('m-status').textContent='Ready';
+      document.getElementById('analyze-btn').classList.add('show');
+      document.getElementById('result-empty').style.display='block';
+      document.getElementById('result-content').classList.add('result-hidden');
+      document.getElementById('loading').classList.remove('show');
+      document.getElementById('new-scan-btn').classList.remove('show');
+      document.getElementById('conf-fill').style.width='0%';
+    };
+    img.src=ev.target.result;
+  };
+  r.readAsDataURL(f);
+}
+
+async function runAnalysis(){
+  if(!curFile||done)return;
+  const base=getBase();
+  if(!base){showErr('Enter backend URL first.');return;}
+  const ab=document.getElementById('analyze-btn');
+  ab.disabled=true;
+  document.getElementById('result-empty').style.display='none';
+  document.getElementById('result-content').classList.add('result-hidden');
+  document.getElementById('loading').classList.add('show');
+  document.getElementById('m-status').textContent='Analyzing...';
+  const steps=['Uploading...','Preprocessing 224×224...','Running MobileNetV2...','Softmax...','Building report...'];
+  let si=0;const lt=document.getElementById('loading-text');
+  const iv=setInterval(()=>{si=Math.min(si+1,steps.length-1);lt.textContent=steps[si];},700);
+  try{
+    const fd=new FormData();fd.append('image',curFile);
+    const res=await fetch(base+'/predict',{method:'POST',body:fd});
+    clearInterval(iv);
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'HTTP '+res.status);}
+    const data=await res.json();
+    if(!data.success)throw new Error(data.error||'Unknown error');
+    curResult=data;
+    showResults(data);
+    saveHistory(data,document.getElementById('preview-img').src,curFile.name);
+    totalScans++;localStorage.setItem('as_total',totalScans);
+    document.getElementById('stat-total').textContent=totalScans;
+  }catch(e){
+    clearInterval(iv);
+    document.getElementById('loading').classList.remove('show');
+    document.getElementById('result-empty').style.display='block';
+    document.getElementById('m-status').textContent='Error';
+    ab.disabled=false;showErr('Error: '+e.message);
+  }
+}
+
+function showResults(data){
+  document.getElementById('loading').classList.remove('show');
+  document.getElementById('result-empty').style.display='none';
+  document.getElementById('result-content').classList.remove('result-hidden');
+  document.getElementById('m-status').textContent='Complete';
+  const top=data.top_prediction;
+  document.getElementById('r-disease').textContent=top.display_name;
+  document.getElementById('r-plant').textContent=top.is_healthy?'Status: Healthy plant':'Disease detected — see recommendations below';
+  const sm={low:['sev-low','LOW RISK'],med:['sev-med','MODERATE RISK'],high:['sev-high','HIGH RISK']};
+  const[cls,lbl]=sm[top.severity]||sm.med;
+  const se=document.getElementById('r-sev');se.className='severity-badge '+cls;se.textContent=lbl;
+  document.getElementById('r-conf').textContent=top.confidence_pct;
+  setTimeout(()=>{document.getElementById('conf-fill').style.width=(top.confidence*100)+'%';},80);
+
+  if(confChart)confChart.destroy();
+  const labels=data.top5.map(p=>p.label.replace(/___/g,'—').replace(/_/g,' ').slice(0,22));
+  const vals=data.top5.map(p=>parseFloat((p.confidence*100).toFixed(1)));
+  const cols=data.top5.map((_,i)=>i===0?'#4ac86e':'rgba(74,200,110,0.2)');
+  confChart=new Chart(document.getElementById('conf-chart').getContext('2d'),{
+    type:'bar',
+    data:{labels,datasets:[{data:vals,backgroundColor:cols,borderRadius:4,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y.toFixed(1)+'%'}}},
+      scales:{
+        x:{ticks:{color:'#4d6654',font:{size:9},maxRotation:25},grid:{color:'rgba(74,200,110,0.05)'}},
+        y:{ticks:{color:'#4d6654',font:{size:9},callback:v=>v+'%'},grid:{color:'rgba(74,200,110,0.07)'},max:100}
+      }
+    }
+  });
+
+  document.getElementById('rec-list').innerHTML=top.recommendations.map((r,i)=>
+    `<div class="rec-item"><span class="rec-num">${i+1}.</span><span>${r}</span></div>`
+  ).join('');
+
+  const ab=document.getElementById('analyze-btn');
+  ab.disabled=false;ab.classList.remove('show');
+  document.getElementById('new-scan-btn').classList.add('show');
+  done=true;
+}
+
+function resetScan(){
+  curFile=null;curResult=null;done=false;
+  document.getElementById('file-input').value='';
+  const pi=document.getElementById('preview-img');
+  pi.style.display='none';pi.src='';
+  document.getElementById('preview-ph').style.display='flex';
+  document.getElementById('analyze-btn').classList.remove('show');
+  document.getElementById('analyze-btn').disabled=false;
+  document.getElementById('new-scan-btn').classList.remove('show');
+  document.getElementById('result-content').classList.add('result-hidden');
+  document.getElementById('result-empty').style.display='block';
+  document.getElementById('loading').classList.remove('show');
+  document.getElementById('conf-fill').style.width='0%';
+  document.getElementById('err-box').classList.remove('show');
+  ['m-name','m-size','m-dim'].forEach(id=>document.getElementById(id).textContent='—');
+  document.getElementById('m-status').textContent='Ready';
+  if(confChart){confChart.destroy();confChart=null;}
+}
+
+function safeSetStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch(e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      try {
+        history = history.slice(0, Math.floor(history.length / 2));
+        localStorage.setItem(key, JSON.stringify(history));
+      } catch(e2) {
+        localStorage.removeItem(key);
+      }
+    }
+  }
+}
+
+function makeThumbnail(dataUrl) {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 60; canvas.height = 60;
+    const ctx = canvas.getContext('2d');
+    const img = new window.Image();
+    img.src = dataUrl;
+    if (img.complete) ctx.drawImage(img, 0, 0, 60, 60);
+    return canvas.toDataURL('image/jpeg', 0.5);
+  } catch(e) {
+    return '';
+  }
+}
+
+function saveHistory(data, imgSrc, fname) {
+  history.unshift({
+    id:      Date.now(),
+    disease: data.top_prediction.display_name,
+    conf:    data.top_prediction.confidence_pct,
+    sev:     data.top_prediction.severity,
+    fname,
+    imgSrc:  makeThumbnail(imgSrc),
+    ts:      new Date().toLocaleString(),
+    recs:    data.top_prediction.recommendations,
+    top5:    data.top5
+  });
+  if (history.length > 20) history = history.slice(0, 20);
+  safeSetStorage('as_hist', JSON.stringify(history));
+}
+
+function renderHistory(){
+  const el=document.getElementById('history-list');
+  if(!history.length){el.innerHTML='<div style="text-align:center;padding:3rem;font-size:12px;color:var(--text3);">No scans yet</div>';return;}
+  el.innerHTML=history.map(e=>`
+    <div class="history-item">
+      <img class="history-img" src="${e.imgSrc}" onerror="this.style.display='none'" alt="">
+      <div class="history-info">
+        <div class="history-disease">${e.disease}</div>
+        <div class="history-meta">${e.fname} · ${e.ts}</div>
+        <span class="severity-badge ${e.sev==='high'?'sev-high':e.sev==='med'?'sev-med':'sev-low'}" style="font-size:10px;padding:2px 8px;margin-top:4px;">${e.sev.toUpperCase()} RISK</span>
+      </div>
+      <div class="history-right">
+        <div class="history-conf">${e.conf}</div>
+        <div style="font-size:10px;color:var(--text3);">confidence</div>
+      </div>
+    </div>`).join('');
+}
+
+function clearHistory(){
+  if(!confirm('Clear all scan history?'))return;
+  history=[];localStorage.removeItem('as_hist');renderHistory();
+}
+
+function exportSinglePDF(){
+  if(!curResult)return;
+  const{jsPDF}=window.jspdf;const doc=new jsPDF();
+  const top=curResult.top_prediction;
+  doc.setFillColor(10,15,13);doc.rect(0,0,210,297,'F');
+  doc.setTextColor(74,200,110);doc.setFontSize(22);doc.setFont('helvetica','bold');
+  doc.text('AgriScan Disease Report',20,25);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(138,171,146);
+  doc.text('Generated: '+new Date().toLocaleString(),20,33);
+  doc.text('File: '+(curFile?.name||'Unknown'),20,39);
+  doc.setDrawColor(74,200,110);doc.setLineWidth(0.3);doc.line(20,44,190,44);
+  doc.setTextColor(232,245,236);doc.setFontSize(16);doc.setFont('helvetica','bold');
+  doc.text('Detection Result',20,55);
+  doc.setFontSize(13);doc.text(top.display_name,20,65);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(138,171,146);
+  doc.text('Confidence: '+top.confidence_pct,20,73);
+  doc.text('Severity: '+top.severity.toUpperCase()+' RISK',20,80);
+  doc.line(20,86,190,86);
+  doc.setTextColor(232,245,236);doc.setFontSize(13);doc.setFont('helvetica','bold');
+  doc.text('Top 5 Predictions',20,96);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');
+  curResult.top5.forEach((p,i)=>{
+    const y=106+i*8;
+    doc.setTextColor(i===0?[74,200,110]:[138,171,146]);
+    doc.text((i+1)+'. '+p.label.replace(/___/g,' - ').replace(/_/g,' '),20,y);
+    doc.text(p.confidence_pct,175,y,{align:'right'});
+  });
+  doc.line(20,150,190,150);
+  doc.setTextColor(232,245,236);doc.setFontSize(13);doc.setFont('helvetica','bold');
+  doc.text('Field Recommendations',20,160);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(138,171,146);
+  top.recommendations.forEach((r,i)=>{
+    const lines=doc.splitTextToSize((i+1)+'. '+r,165);
+    doc.text(lines,20,170+i*12);
+  });
+  doc.setTextColor(77,102,84);doc.setFontSize(8);
+  doc.text('AgriScan v2.0 · MobileNetV2 · 44 Classes · 99.2% Accuracy',20,285);
+  doc.save('agriscan_'+top.display_name.replace(/\s/g,'_')+'_'+Date.now()+'.pdf');
+}
+
+const bi=document.getElementById('batch-input');
+const bd=document.getElementById('batch-drop');
+bi.addEventListener('change',e=>{if(e.target.files.length)addBatch(Array.from(e.target.files));});
+bd.addEventListener('dragover',e=>{e.preventDefault();bd.classList.add('drag-over');});
+bd.addEventListener('dragleave',()=>bd.classList.remove('drag-over'));
+bd.addEventListener('drop',e=>{e.preventDefault();bd.classList.remove('drag-over');if(e.dataTransfer.files.length)addBatch(Array.from(e.dataTransfer.files));});
+
+function addBatch(files){
+  batchFiles=[...batchFiles,...files.filter(f=>f.type.startsWith('image/'))];
+  batchResults=[];
+  renderBatchQueue();
+  document.getElementById('batch-run-btn').disabled=!batchFiles.length;
+  document.getElementById('batch-export-btn').style.display='none';
+  document.getElementById('batch-clear-btn').style.display='none';
+  document.getElementById('batch-results-grid').style.display='none';
+  document.getElementById('batch-cards').innerHTML='';
+  // Show pending placeholders immediately
+  renderPendingCards();
+}
+
+function clearBatch(){
+  batchFiles=[];batchResults=[];
+  renderBatchQueue();
+  document.getElementById('batch-run-btn').disabled=true;
+  document.getElementById('batch-export-btn').style.display='none';
+  document.getElementById('batch-clear-btn').style.display='none';
+  document.getElementById('batch-results-grid').style.display='none';
+  document.getElementById('batch-cards').innerHTML='';
+  document.getElementById('batch-prog').style.width='0%';
+  document.getElementById('batch-status').textContent='';
+}
+
+function renderBatchQueue(){
+  const q=document.getElementById('batch-queue');
+  if(!batchFiles.length){q.innerHTML='';return;}
+  q.innerHTML=batchFiles.map((f,i)=>`
+    <div class="batch-item">
+      <div style="width:36px;height:36px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;color:var(--text3);">${i+1}</div>
+      <div class="batch-info"><div class="batch-name">${f.name}</div><div class="batch-sz">${(f.size/1024).toFixed(1)} KB</div></div>
+      <span style="font-size:10px;color:var(--text3);">Queued</span>
+    </div>`).join('');
+}
+
+function renderPendingCards(){
+  if(!batchFiles.length)return;
+  const grid=document.getElementById('batch-results-grid');
+  const cards=document.getElementById('batch-cards');
+  grid.style.display='block';
+  cards.innerHTML=batchFiles.map((f,i)=>`
+    <div class="batch-result-card" id="brc-${i}">
+      <div class="brc-header">
+        <div class="brc-thumb-ph" id="brc-thumb-${i}">IMG</div>
+        <div class="brc-meta">
+          <div class="brc-idx">Image ${i+1} of ${batchFiles.length}</div>
+          <div class="brc-fname">${f.name}</div>
+          <span class="severity-badge sev-low" style="opacity:0.3;">PENDING</span>
+        </div>
+        <div class="brc-right">
+          <div class="brc-conf-big" style="color:var(--text3);">—</div>
+          <div class="brc-conf-lbl">Confidence</div>
+        </div>
+      </div>
+      <div class="brc-pending" id="brc-body-${i}">Waiting to be analysed...</div>
+    </div>`).join('');
+}
+
+async function runBatch(){
+  const base=getBase();
+  if(!base){alert('Enter backend URL first.');return;}
+  if(!batchFiles.length)return;
+
+  const btn=document.getElementById('batch-run-btn');
+  btn.disabled=true;
+  btn.innerHTML='<div class="spinner" style="width:16px;height:16px;border-width:2px;"></div> Analysing...';
+  batchResults=[];
+
+  // Show pending cards if not already visible
+  renderPendingCards();
+
+  const prog=document.getElementById('batch-prog');
+  const st=document.getElementById('batch-status');
+
+  for(let i=0;i<batchFiles.length;i++){
+    st.textContent='Processing '+(i+1)+' of '+batchFiles.length+'...';
+    prog.style.width=((i/batchFiles.length)*100)+'%';
+
+    // Show processing state on this card
+    const bodyEl=document.getElementById('brc-body-'+i);
+    if(bodyEl){
+      bodyEl.innerHTML=`<div class="brc-processing"><div class="spinner" style="width:20px;height:20px;border-width:2px;"></div> Analysing image...</div>`;
+    }
+
+    // Load image preview into card
+    loadThumbIntoCard(batchFiles[i], i);
+
+    try{
+      const fd=new FormData();fd.append('image',batchFiles[i]);
+      const res=await fetch(base+'/predict',{method:'POST',body:fd});
+      const data=await res.json();
+      const result=data.success?data:{
+        top_prediction:{display_name:'Analysis Failed',confidence_pct:'0%',
+          confidence:0,severity:'med',is_healthy:false,recommendations:['Retry analysis','Check image quality']},
+        top5:[]
+      };
+      batchResults.push(result);
+      renderBatchCard(i, result, batchFiles[i]);
+      saveHistory(result,'',batchFiles[i].name);
+      totalScans++;localStorage.setItem('as_total',totalScans);
+      document.getElementById('stat-total').textContent=totalScans;
+    }catch(e){
+      const errResult={
+        top_prediction:{display_name:'Connection Error',confidence_pct:'0%',
+          confidence:0,severity:'med',is_healthy:false,recommendations:['Check backend connection','Retry analysis']},
+        top5:[]
+      };
+      batchResults.push(errResult);
+      renderBatchCard(i, errResult, batchFiles[i]);
+    }
+  }
+
+  prog.style.width='100%';
+  st.textContent='Complete — '+batchFiles.length+' images analysed';
+  btn.innerHTML='Analyse All Images';btn.disabled=false;
+  document.getElementById('batch-export-btn').style.display='flex';
+  document.getElementById('batch-clear-btn').style.display='flex';
+
+  // Hide queue, show only results
+  document.getElementById('batch-queue').innerHTML='';
+}
+
+function loadThumbIntoCard(file, idx){
+  const r=new FileReader();
+  r.onload=ev=>{
+    const thumbEl=document.getElementById('brc-thumb-'+idx);
+    if(thumbEl){
+      const img=document.createElement('img');
+      img.src=ev.target.result;
+      img.className='brc-thumb';
+      img.alt='';
+      thumbEl.replaceWith(img);
+    }
+  };
+  r.readAsDataURL(file);
+}
+
+let batchCharts={};
+
+function renderBatchCard(idx, data, file){
+  const top=data.top_prediction;
+  const card=document.getElementById('brc-'+idx);
+  if(!card)return;
+
+  // Update header
+  const sevMap={low:['sev-low','LOW RISK'],med:['sev-med','MODERATE RISK'],high:['sev-high','HIGH RISK']};
+  const[cls,lbl]=sevMap[top.severity]||sevMap.med;
+
+  card.querySelector('.brc-meta').innerHTML=`
+    <div class="brc-idx">Image ${idx+1} of ${batchFiles.length}</div>
+    <div class="brc-fname">${file.name}</div>
+    <div class="brc-disease">${top.display_name}</div>
+    <span class="severity-badge ${cls}">${lbl}</span>`;
+
+  card.querySelector('.brc-right').innerHTML=`
+    <div class="brc-conf-big">${top.confidence_pct}</div>
+    <div class="brc-conf-lbl">Confidence</div>`;
+
+  // Build body — confidence bar + chart on left, recommendations on right
+  const bodyEl=document.getElementById('brc-body-'+idx);
+  if(bodyEl){
+    bodyEl.className='brc-body';
+    bodyEl.innerHTML=`
+      <div class="brc-left">
+        <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:5px;">Confidence</div>
+        <div class="conf-bar-bg"><div class="conf-bar-fill" id="bcf-${idx}" style="width:0%"></div></div>
+        <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin:0.75rem 0 5px;">Top Predictions</div>
+        <div class="brc-chart-wrap"><canvas id="bchart-${idx}"></canvas></div>
+      </div>
+      <div class="brc-right-panel">
+        <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:6px;">Field Recommendations</div>
+        ${top.recommendations.map((r,i)=>`<div class="brc-rec"><span class="brc-rec-num">${i+1}.</span><span>${r}</span></div>`).join('')}
+      </div>`;
+
+    // Animate confidence bar
+    setTimeout(()=>{
+      const fill=document.getElementById('bcf-'+idx);
+      if(fill) fill.style.width=(top.confidence*100)+'%';
+    },100);
+
+    // Draw chart
+    setTimeout(()=>{
+      const canvas=document.getElementById('bchart-'+idx);
+      if(!canvas||!data.top5||!data.top5.length)return;
+      if(batchCharts[idx])batchCharts[idx].destroy();
+      const labels=data.top5.map(p=>p.label.replace(/___/g,'—').replace(/_/g,' ').slice(0,20));
+      const vals=data.top5.map(p=>parseFloat((p.confidence*100).toFixed(1)));
+      const cols=data.top5.map((_,i)=>i===0?'#4ac86e':'rgba(74,200,110,0.2)');
+      batchCharts[idx]=new Chart(canvas.getContext('2d'),{
+        type:'bar',
+        data:{labels,datasets:[{data:vals,backgroundColor:cols,borderRadius:4,borderSkipped:false}]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y.toFixed(1)+'%'}}},
+          scales:{
+            x:{ticks:{color:'#4d6654',font:{size:8},maxRotation:30},grid:{color:'rgba(74,200,110,0.05)'}},
+            y:{ticks:{color:'#4d6654',font:{size:8},callback:v=>v+'%'},grid:{color:'rgba(74,200,110,0.07)'},max:100}
+          }
+        }
+      });
+    },150);
+  }
+
+  // Scroll card into view
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function exportBatchPDF(){
+  if(!batchResults.length){alert('Run batch analysis first.');return;}
+  const{jsPDF}=window.jspdf;const doc=new jsPDF();
+  doc.setFillColor(10,15,13);doc.rect(0,0,210,297,'F');
+  doc.setTextColor(74,200,110);doc.setFontSize(20);doc.setFont('helvetica','bold');
+  doc.text('AgriScan Batch Report',20,25);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(138,171,146);
+  doc.text('Generated: '+new Date().toLocaleString()+' · '+batchFiles.length+' images',20,33);
+  doc.setDrawColor(74,200,110);doc.setLineWidth(0.3);doc.line(20,38,190,38);
+  const high=batchResults.filter(r=>r.top_prediction.severity==='high').length;
+  const med=batchResults.filter(r=>r.top_prediction.severity==='med').length;
+  const low=batchResults.filter(r=>r.top_prediction.severity==='low').length;
+  doc.setTextColor(232,245,236);doc.setFontSize(11);doc.setFont('helvetica','bold');doc.text('Summary',20,50);
+  doc.setFontSize(10);doc.setFont('helvetica','normal');
+  doc.setTextColor(226,80,80);doc.text('High Risk: '+high,20,60);
+  doc.setTextColor(226,160,48);doc.text('Moderate: '+med,70,60);
+  doc.setTextColor(74,200,110);doc.text('Low/Healthy: '+low,120,60);
+  doc.line(20,65,190,65);
+  doc.setTextColor(232,245,236);doc.setFontSize(11);doc.setFont('helvetica','bold');doc.text('Results',20,74);
+  let y=84;
+  batchFiles.forEach((f,i)=>{
+    if(y>268){doc.addPage();doc.setFillColor(10,15,13);doc.rect(0,0,210,297,'F');y=20;}
+    const r=batchResults[i];if(!r)return;
+    const col=r.top_prediction.severity==='high'?[226,80,80]:r.top_prediction.severity==='med'?[226,160,48]:[74,200,110];
+    doc.setFillColor(...col);doc.circle(24,y-1,3,'F');
+    doc.setTextColor(...col);doc.setFontSize(10);doc.setFont('helvetica','bold');
+    doc.text((i+1)+'. '+r.top_prediction.display_name,30,y);
+    doc.setTextColor(138,171,146);doc.setFontSize(9);doc.setFont('helvetica','normal');
+    doc.text(f.name+' · '+r.top_prediction.confidence_pct+' · '+r.top_prediction.severity.toUpperCase(),30,y+6);
+    y+=16;
+  });
+  doc.setTextColor(77,102,84);doc.setFontSize(8);
+  doc.text('AgriScan v2.0 · MobileNetV2 · 44 Classes · 99.2% Accuracy',20,285);
+  doc.save('agriscan_batch_'+Date.now()+'.pdf');
+}
+</script>
+</body>
+</html>
