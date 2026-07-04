@@ -9,7 +9,8 @@ classes using MobileNetV2 transfer learning.
 - 🗂 Multi-field management with scan history
 - 📊 Officer dashboard for disease trend monitoring
 - 📄 PDF export for scan reports
-
+## Demo
+https://drive.google.com/file/d/1NW45AYpmR5CGjyLKQ-R3N_6P89Ytvrz9/view?usp=drivesdk
 ## Model
 - Architecture: MobileNetV2 (transfer learning)
 - Dataset: PlantVillage + PlantDoc + Rice + Wheat (79,898 images)
