@@ -270,8 +270,6 @@ body.hindi .suit-detail,body.hindi .suit-title{font-family:'Noto Sans Devanagari
 </header>
 
 <div class="config-bar">
-  <span class="config-label" id="lbl-config">Backend URL</span>
-  <input class="config-input" id="api-url" type="text" placeholder="Paste your cloudflared URL — https://xxxx.trycloudflare.com">
   <button class="config-btn" onclick="testConn()">Test Connection</button>
   <span class="conn-status idle" id="conn-status">Not connected</span>
 </div>
@@ -533,10 +531,10 @@ localStorage.removeItem('as_total'); // clear any stale scan count from previous
 let totalScans=0; // session-only counter — resets each page load
 document.getElementById('stat-total').textContent=totalScans;
 
-function getBase(){return(document.getElementById('api-url').value||'').trim().replace(/\/$/,'');}
+function getBase(){return '';}
 
 async function testConn(){
-  const b=getBase();if(!b){setCS('err','Enter URL first');return;}
+  const b=getBase();
   setCS('idle','Testing...');
   try{
     const r=await fetch(b+'/health');
