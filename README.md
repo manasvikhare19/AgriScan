@@ -16,7 +16,7 @@
 
 ## 🔗 Live Demo
 
-**➡️ [https://YOUR-DEPLOYED-LINK-HERE.onrender.com](https://YOUR-DEPLOYED-LINK-HERE.onrender.com)**
+**➡️ [DEPLOYED-LINK](https://agriscan-1-3aza.onrender.com)**
 
 > Hosted on Render's free tier — the first request after a period of inactivity may take 30–50 seconds to wake up. Subsequent requests are near-instant.
 
