@@ -500,15 +500,11 @@ def save_fields(fields):
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/")
-def index():
-    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
-
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "classes": len(ID_TO_LABEL)})
 
-# ── /predict — unchanged core, now also logs scan to field ──
+# ── /predict — inference and optional field history logging ──
 @app.route("/predict", methods=["POST"])
 def predict():
     if "image" not in request.files:
@@ -528,18 +524,39 @@ def predict():
                   "confidence_pct": f"{probs[i]*100:.1f}%"} for i in top5]
 
         top_label = preds[0]["label"]
+        display_name = top_label.replace("___", " — ").replace("_", " ")
+        recs = RECS.get(top_label, DEFAULT_RECS)
+        top5_formatted = [
+            {
+                "class_id": p["class_id"],
+                "label": p["label"],
+                "disease": p["label"].replace("___", " — ").replace("_", " "),
+                "display_name": p["label"].replace("___", " — ").replace("_", " "),
+                "confidence": p["confidence"],
+                "confidence_pct": p["confidence_pct"],
+            }
+            for p in preds
+        ]
+
         result = {
             "success": True,
+            "disease": display_name,
+            "prediction": display_name,
+            "confidence": preds[0]["confidence"],
+            "confidence_pct": preds[0]["confidence_pct"],
+            "severity": get_severity(top_label),
+            "is_healthy": "healthy" in top_label.lower(),
+            "recommendations": recs,
             "top_prediction": {
                 "label":          top_label,
-                "display_name":   top_label.replace("___", " — ").replace("_", " "),
+                "display_name":   display_name,
                 "confidence":     preds[0]["confidence"],
                 "confidence_pct": preds[0]["confidence_pct"],
                 "severity":       get_severity(top_label),
                 "is_healthy":     "healthy" in top_label.lower(),
-                "recommendations": RECS.get(top_label, DEFAULT_RECS),
+                "recommendations": recs,
             },
-            "top5": preds
+            "top5": top5_formatted
         }
 
         # Log scan into field history if field_id provided
@@ -549,7 +566,7 @@ def predict():
                 scan_entry = {
                     "timestamp":   datetime.datetime.now().isoformat(),
                     "label":       top_label,
-                    "display":     top_label.replace("___", " — ").replace("_", " "),
+                    "display":     display_name,
                     "confidence":  preds[0]["confidence_pct"],
                     "severity":    get_severity(top_label),
                     "is_healthy":  "healthy" in top_label.lower(),
@@ -564,34 +581,51 @@ def predict():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ── NEW: /weather — fetch live weather + disease risk ────────
+# ── /weather — fetch live weather + disease risk ─────────────
 @app.route("/weather")
 def weather():
     lat  = request.args.get("lat")
     lon  = request.args.get("lon")
     crop = request.args.get("crop", "")
-    api_key = request.args.get("api_key", "")   # user supplies their OWM key
+    api_key = request.args.get("api_key", "")
 
     if not lat or not lon:
         return jsonify({"error": "lat and lon are required"}), 400
-    if not api_key:
-        return jsonify({"error": "OpenWeatherMap API key required. Get a free key at openweathermap.org"}), 400
 
     try:
-        url = (f"https://api.openweathermap.org/data/2.5/weather"
-               f"?lat={lat}&lon={lon}&appid={api_key}&units=metric")
-        resp = requests.get(url, timeout=8)
-        if resp.status_code != 200:
-            return jsonify({"error": f"Weather API error: {resp.status_code}"}), 502
+        if api_key:
+            url = (f"https://api.openweathermap.org/data/2.5/weather"
+                   f"?lat={lat}&lon={lon}&appid={api_key}&units=metric")
+            resp = requests.get(url, timeout=8)
+            if resp.status_code != 200:
+                return jsonify({"error": f"Weather API error: {resp.status_code}"}), 502
 
-        w = resp.json()
-        temp      = w["main"]["temp"]
-        humidity  = w["main"]["humidity"]
-        feels     = w["main"]["feels_like"]
-        wind_kph  = round(w["wind"]["speed"] * 3.6, 1)
-        condition = w["weather"][0]["description"].capitalize()
-        city      = w.get("name", "Unknown location")
-        rain_1h   = w.get("rain", {}).get("1h", 0)
+            w = resp.json()
+            temp      = w["main"]["temp"]
+            humidity  = w["main"]["humidity"]
+            feels     = w["main"]["feels_like"]
+            wind_kph  = round(w["wind"]["speed"] * 3.6, 1)
+            condition = w["weather"][0]["description"].capitalize()
+            city      = w.get("name", "Unknown location")
+            rain_1h   = w.get("rain", {}).get("1h", 0)
+        else:
+            # Fallback to free Open-Meteo service
+            url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+                   f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,weather_code"
+                   f"&wind_speed_unit=kmh&timezone=auto")
+            resp = requests.get(url, timeout=8)
+            if resp.status_code != 200:
+                return jsonify({"error": f"Open-Meteo error: {resp.status_code}"}), 502
+
+            w = resp.json()
+            c = w.get("current", {})
+            temp      = c.get("temperature_2m", 25.0)
+            humidity  = c.get("relative_humidity_2m", 60)
+            feels     = c.get("apparent_temperature", temp)
+            wind_kph  = c.get("wind_speed_10m", 5.0)
+            rain_1h   = c.get("precipitation", 0)
+            condition = "Clear"
+            city      = f"Field Region ({lat}, {lon})"
 
         # Disease risk for the selected crop
         risk_warnings = []
@@ -613,6 +647,7 @@ def weather():
             "wind_kph":      wind_kph,
             "condition":     condition,
             "rain_1h_mm":    rain_1h,
+            "spray_ok":      spray_ok,
             "spray_advice":  spray_advice,
             "disease_risk":  risk_warnings,
         })
@@ -620,6 +655,15 @@ def weather():
         return jsonify({"error": "Weather service timed out — check your internet connection"}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ── Static File / SPA Route ──────────────────────────────────
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve(path):
+    static_folder = os.path.join(BASE_DIR, "static")
+    if path != "" and os.path.exists(os.path.join(static_folder, path)):
+        return send_from_directory(static_folder, path)
+    return send_from_directory(static_folder, "index.html")
 
 # ── NEW: /fields — list all fields ───────────────────────────
 @app.route("/fields", methods=["GET"])
